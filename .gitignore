@@ -15,4 +15,5 @@ staging/
 *.gif
 *.tiff
 *.pptx
+*.svg
 /powerpoint/*

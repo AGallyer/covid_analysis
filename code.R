@@ -7,6 +7,7 @@ library(tsibble)
 library(fpp3)
 library(gganimate)
 library(gifski)
+library(qrcode)
 source(here("src", "get_data.R"))
 
 # Import Data -------------------------------------------------------------
@@ -128,10 +129,12 @@ county_pop <- county_pop_0009 %>%
   mutate("year" = as.numeric(year))
 
 # Get every combination of county, month, and year
-full_dates <- expand.grid(unique(county_pop$county_name), 2000:2021, 1:12) %>% 
-  rename("county_name" = Var1, 
-         "year" = Var2, 
-         "month" = Var3)
+full_dates <- expand.grid(unique(county_pop$county_name), 2000:2021, 1:12) %>%
+  rename(
+    "county_name" = Var1,
+    "year" = Var2,
+    "month" = Var3
+  )
 
 # Have a population column for each month of each year from 2000 to end of 2021
 population_data <- county_pop %>%
@@ -196,10 +199,10 @@ death_animated <- clean_data %>%
   theme(text = element_text(size = 25))
 
 animate(death_animated,
-        duration = 13, fps = 20,
-        renderer = gifski_renderer(loop = FALSE),
-        units = "in",
-        width = 16, height = 8, res = 150
+  duration = 13, fps = 20,
+  renderer = gifski_renderer(loop = FALSE),
+  units = "in",
+  width = 16, height = 8, res = 150
 )
 
 anim_save(here("visualizations", "animations", "death_time.gif"))
@@ -216,11 +219,12 @@ clean_data %>%
   xlab("Date (by month)") +
   theme(text = element_text(size = 25))
 
-ggsave(here("visualizations", "plots", 'death_static.tiff'), 
-       units = 'in', 
-       width = 16, 
-       height = 8, 
-       dpi = 800)
+ggsave(here("visualizations", "plots", "death_static.tiff"),
+  units = "in",
+  width = 16,
+  height = 8,
+  dpi = 800
+)
 
 # Split data into before pandemic started and after pandemic started
 pre_pandemic_data <- clean_data %>%
@@ -257,7 +261,7 @@ cis <- fc_death %>%
 
 # Build on previous animation by adding forecast
 cis <- cis %>%
-  select("death_rate" = mean, everything())# rename mean to death_rate so it can be added to same plot
+  select("death_rate" = mean, everything()) # rename mean to death_rate so it can be added to same plot
 
 death_animated2 <- clean_data %>%
   filter(date <= date("2020-02-01")) %>%
@@ -303,11 +307,11 @@ post_pandemic_data <- clean_data %>%
 # Function for calculating excess mortality rate
 negpos_rate <- function(observed, predicted, upr, lwr, date) {
   obs.diff <- observed - predicted
-  
+
   lwr.diff <- observed - upr
-  
+
   upr.diff <- observed - lwr
-  
+
   data.frame(
     excess.lwr = sum(lwr.diff, na.rm = TRUE) / length(date),
     excess = sum(obs.diff, na.rm = TRUE) / length(date),
@@ -376,7 +380,7 @@ corr_data <- covid_cases %>%
   ) %>%
   group_by(year, month) %>%
   summarize(
-    "cases" = n(), 
+    "cases" = n(),
     "deaths" = sum(died)
   ) %>%
   mutate("day" = 1) %>%
@@ -408,12 +412,14 @@ analysis_data <- clean_data %>%
   as_tsibble(index = year_month) %>%
   select(death_rate, cases, num_vaccines, pandemic, year_month, month, total_deaths) %>%
   full_join(cli_clean) %>%
-  full_join(vaers_clean) %>% 
-  mutate('future_death_rate' = lead(death_rate, n = 1), 
-         total_cli = replace_na(total_cli, 0), 
-         total_aes = replace_na(total_aes, 0), 
-         cases = replace_na(cases, 0), 
-         num_vaccines = replace_na(num_vaccines, 0))
+  full_join(vaers_clean) %>%
+  mutate(
+    "future_death_rate" = lead(death_rate, n = 1),
+    total_cli = replace_na(total_cli, 0),
+    total_aes = replace_na(total_aes, 0),
+    cases = replace_na(cases, 0),
+    num_vaccines = replace_na(num_vaccines, 0)
+  )
 
 # examine assumptions
 
@@ -427,180 +433,197 @@ analysis_data %>%
 
 analysis_data %>%
   ACF(future_death_rate) %>%
-  autoplot()# Not stationary
+  autoplot() # Not stationary
 
 analysis_data %>%
   ACF(difference(future_death_rate)) %>%
-  autoplot()# Difference eliminates it, getting maybe slight over-differencing
+  autoplot() # Difference eliminates it, getting maybe slight over-differencing
 
 analysis_data <- analysis_data %>%
-  mutate("difference_death" = difference(death_rate), 
-         'difference_future_death' = difference(future_death_rate)) 
+  mutate(
+    "difference_death" = difference(death_rate),
+    "difference_future_death" = difference(future_death_rate)
+  )
 
 # Analyze the data
 ## Model 1: number of cases and number of mrna vaccines
 
-linear_model <- analysis_data %>% 
+linear_model <- analysis_data %>%
   model(TSLM(difference_death ~ trend() + season() + cases + num_vaccines))
 
 ### Show results
-linear_model %>% 
+linear_model %>%
   report()
 
 ### Check assumptions
-linear_model %>% 
+linear_model %>%
   gg_tsresiduals()
 
 #### Check homoscedasticity
-augment(linear_model) %>% 
+augment(linear_model) %>%
   ggplot(aes(x = .fitted, y = .resid)) +
-  geom_point() + labs(x = "Fitted", y = "Residuals")
+  geom_point() +
+  labs(x = "Fitted", y = "Residuals")
 
 ## Model 2: CLI and number of mrna vaccines
 
-linear_model <- analysis_data %>% 
+linear_model <- analysis_data %>%
   model(TSLM(difference_death ~ trend() + season() + total_cli + num_vaccines))
 
 ### Show results
-linear_model %>% 
+linear_model %>%
   report()
 
 ### Check assumptions
-linear_model %>% 
+linear_model %>%
   gg_tsresiduals()
 
 #### Check homoscedasticity
-augment(linear_model) %>% 
+augment(linear_model) %>%
   ggplot(aes(x = .fitted, y = .resid)) +
-  geom_point() + labs(x = "Fitted", y = "Residuals")
+  geom_point() +
+  labs(x = "Fitted", y = "Residuals")
 
 ## Model 3: number of cases and total AEs
-linear_model <- analysis_data %>% 
+linear_model <- analysis_data %>%
   model(TSLM(difference_death ~ trend() + season() + cases + total_aes))
 
 ### Show results
-linear_model %>% 
+linear_model %>%
   report()
 
 ### Check assumptions
-linear_model %>% 
+linear_model %>%
   gg_tsresiduals()
 
 #### Check homoscedasticity
-augment(linear_model) %>% 
+augment(linear_model) %>%
   ggplot(aes(x = .fitted, y = .resid)) +
-  geom_point() + labs(x = "Fitted", y = "Residuals")
+  geom_point() +
+  labs(x = "Fitted", y = "Residuals")
 
 ## Model 4: CLI and total AEs
-linear_model <- analysis_data %>% 
+linear_model <- analysis_data %>%
   model(TSLM(difference_death ~ trend() + season() + total_cli + total_aes))
 
 ### Show results
-linear_model %>% 
+linear_model %>%
   report()
 
 ### Check assumptions
-ts_residuals <- linear_model %>% 
+ts_residuals <- linear_model %>%
   gg_tsresiduals()
 
-ggsave(here('visualizations', 'plots', 'model1_assumptions.tiff'), 
-       units = 'in', width = 10, height = 10,
-       dpi = 800, plot = ts_residuals)
+ggsave(here("visualizations", "plots", "model1_assumptions.tiff"),
+  units = "in", width = 10, height = 10,
+  dpi = 800, plot = ts_residuals
+)
 
 #### Check homoscedasticity
-augment(linear_model) %>% 
+augment(linear_model) %>%
   ggplot(aes(x = .fitted, y = .resid)) +
-  geom_point() + labs(x = "Fitted", y = "Residuals")
+  geom_point() +
+  labs(x = "Fitted", y = "Residuals")
 
-ggsave(here('visualizations', 'plots', 'model1_fitvsresid.tiff'), 
-       units = 'in', width = 10, height = 10,
-       dpi = 800)
+ggsave(here("visualizations", "plots", "model1_fitvsresid.tiff"),
+  units = "in", width = 10, height = 10,
+  dpi = 800
+)
 
 
 # Create scatter plots of only post march 2020 relationships
-plot_data <- analysis_data %>% 
-  filter(year_month >= yearmonth('2020-03-01'))
+plot_data <- analysis_data %>%
+  filter(year_month >= yearmonth("2020-03-01"))
 
 ggplot(plot_data, aes(x = cases, y = difference_death)) +
   geom_point(color = "#00447c", size = 3) +
-  theme_classic() + 
-  theme(text = element_text(size = 25)) + 
-  ylab('Death Rate (per 100,000; differenced)') +
-  xlab('COVID-19 Cases') + 
-  geom_smooth(method = 'lm', se = FALSE, color = "#00447c")
+  theme_classic() +
+  theme(text = element_text(size = 25)) +
+  ylab("Death Rate (per 100,000; differenced)") +
+  xlab("COVID-19 Cases") +
+  geom_smooth(method = "lm", se = FALSE, color = "#00447c")
 
-ggsave(here('visualizations', 'plots', 'cases_death_scatter.tiff'), 
-       units = 'in', width = 10, height = 10,
-       dpi = 800)
+ggsave(here("visualizations", "plots", "cases_death_scatter.tiff"),
+  units = "in", width = 10, height = 10,
+  dpi = 800
+)
 
 ggplot(plot_data, aes(x = num_vaccines, y = difference_death)) +
   geom_point(color = "#00447c", size = 3) +
-  theme_classic() + 
-  theme(text = element_text(size = 25)) + 
-  ylab('Death Rate (per 100,000; differenced)') +
-  xlab('mRNA Vaccines Administered') + 
-  geom_smooth(method = 'lm', se = FALSE, color = "#00447c")
+  theme_classic() +
+  theme(text = element_text(size = 25)) +
+  ylab("Death Rate (per 100,000; differenced)") +
+  xlab("mRNA Vaccines Administered") +
+  geom_smooth(method = "lm", se = FALSE, color = "#00447c")
 
-ggsave(here("visualizations", "plots", 'vaccines_death_scatter.tiff'), 
-       units = 'in', width = 10, height = 10,
-       dpi = 800)
+ggsave(here("visualizations", "plots", "vaccines_death_scatter.tiff"),
+  units = "in", width = 10, height = 10,
+  dpi = 800
+)
 
 ggplot(plot_data, aes(x = total_cli, y = difference_death)) +
   geom_point(color = "#00447c", size = 3) +
-  theme_classic() + 
-  theme(text = element_text(size = 25)) + 
-  ylab('Death Rate (per 100,000; differenced)') +
-  xlab('Total COVID-like Illness ER Visits') +
-  geom_smooth(method = 'lm', se = FALSE, color = "#00447c")
+  theme_classic() +
+  theme(text = element_text(size = 25)) +
+  ylab("Death Rate (per 100,000; differenced)") +
+  xlab("Total COVID-like Illness ER Visits") +
+  geom_smooth(method = "lm", se = FALSE, color = "#00447c")
 
-ggsave(here("visualizations", "plots", 'cli_death_scatter.tiff'), units = 'in', 
-       width = 10, height = 10,
-       dpi = 800)
+ggsave(here("visualizations", "plots", "cli_death_scatter.tiff"),
+  units = "in",
+  width = 10, height = 10,
+  dpi = 800
+)
 
 ggplot(plot_data, aes(x = total_aes, y = difference_death)) +
   geom_point(color = "#00447c", size = 3) +
-  theme_classic() + 
-  theme(text = element_text(size = 25)) + 
-  ylab('Death Rate (per 100,000; differenced)') +
-  xlab('Total Vaccine Adverse Events Reported') + 
-  geom_smooth(method = 'lm', se = FALSE, color = "#00447c")
+  theme_classic() +
+  theme(text = element_text(size = 25)) +
+  ylab("Death Rate (per 100,000; differenced)") +
+  xlab("Total Vaccine Adverse Events Reported") +
+  geom_smooth(method = "lm", se = FALSE, color = "#00447c")
 
-ggsave(here("visualizations", "plots", 'aes_death_scatter.tiff'), units = 'in', 
-       width = 10, height = 10,
-       dpi = 800)
+ggsave(here("visualizations", "plots", "aes_death_scatter.tiff"),
+  units = "in",
+  width = 10, height = 10,
+  dpi = 800
+)
 
 # Future analysis ---------------------------------------------------------
 
 ## Vaccine
-
-linear_model <- analysis_data %>% 
+linear_model <- analysis_data %>%
   model(TSLM(difference_future_death ~ trend() + season() + num_vaccines))
 
 ### Show results
-linear_model %>% 
-  report()# No significant relationship
+linear_model %>%
+  report() # No significant relationship
 
 ### Check assumptions
-linear_model %>% 
+linear_model %>%
   gg_tsresiduals()
 
 #### Check homoscedasticity
-augment(linear_model) %>% 
+augment(linear_model) %>%
   ggplot(aes(x = .fitted, y = .resid)) +
-  geom_point() + labs(x = "Fitted", y = "Residuals")
+  geom_point() +
+  labs(x = "Fitted", y = "Residuals")
 
 # VAERs Animation ---------------------------------------------------------
 
-#VAERS numbers pulled from CDC wonder on July 12, 2023
-#COVID deaths pulled from John Hopkins on 7/12/2023. JHU stopped updating on 3/10/2023
+# VAERS numbers pulled from CDC wonder on July 12, 2023
+# COVID deaths pulled from John Hopkins on 7/12/2023. JHU stopped updating on 3/10/2023
 
-vaers_idaho_data <- data.frame('event_type' = c('vaers_all', 
-                                                'vaers_serious', 
-                                                'vaers_death', 
-                                                'vaccine_given', 
-                                                'covid_deaths'
-), 
-'number_reports' = c(4487, 318, 30, 2871087, 5416))
+vaers_idaho_data <- data.frame(
+  "event_type" = c(
+    "vaers_all",
+    "vaers_serious",
+    "vaers_death",
+    "vaccine_given",
+    "covid_deaths"
+  ),
+  "number_reports" = c(4487, 318, 30, 2871087, 5416)
+)
 
 
 order <- c("vaers_death", "vaers_serious", "vaers_all", "covid_deaths", "vaccine_given")
@@ -612,33 +635,54 @@ vaers_idaho_data$order <- factor(vaers_idaho_data$event_type, levels = order)
 p <- vaers_idaho_data %>%
   ggplot(aes(x = order, y = number_reports, fill = order, group = order)) +
   geom_col() +
-  scale_fill_manual(values = c("vaers_all" = "#9a4e9e",
-                               "vaers_serious" = "#fdd404",
-                               "vaers_death" = "#00447c",
-                               "covid_deaths" = "#cf4727",
-                               "vaccine_given" = "#32bfc5")) +
-  ggtitle('COVID-19 and COVID Vaccine Idaho data') + 
-  scale_x_discrete(labels = c('Vax. deaths reported',
-                              'Serious vax. side effects', 
-                              'All vax. side effects', 
-                              'COVID-19 deaths', 
-                              'COVID vaccines administered'
-                              
-  )) + 
-  labs(x = "", y = "", fill = '') + 
-  theme_classic() + 
-  theme(text = element_text(size = 26.9), legend.position = 'none', 
-        axis.text.x = element_text(angle = 45, hjust = 1), 
-        axis.text.y = element_text(size = 21), axis.title.x = element_blank()) + 
+  scale_fill_manual(values = c(
+    "vaers_all" = "#9a4e9e",
+    "vaers_serious" = "#fdd404",
+    "vaers_death" = "#00447c",
+    "covid_deaths" = "#cf4727",
+    "vaccine_given" = "#32bfc5"
+  )) +
+  ggtitle("COVID-19 and COVID Vaccine Idaho data") +
+  scale_x_discrete(labels = c(
+    "Vax. deaths reported",
+    "Serious vax. side effects",
+    "All vax. side effects",
+    "COVID-19 deaths",
+    "COVID vaccines administered"
+  )) +
+  labs(x = "", y = "", fill = "") +
+  theme_classic() +
+  theme(
+    text = element_text(size = 26.9), legend.position = "none",
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 21), axis.title.x = element_blank()
+  ) +
   transition_states(order, transition_length = c(5, 5, 5, 10), state_length = 1) +
-  view_follow(fixed_x = TRUE) + 
-  enter_grow() + 
+  view_follow(fixed_x = TRUE) +
+  enter_grow() +
   shadow_mark()
 
 
 # Animate the plot
-animate(p, fps = 50, duration = 29, width = 10, height = 12, units = 'in', 
-        res = 150, renderer = gifski_renderer(loop = FALSE))
+animate(p,
+  fps = 50, duration = 29, width = 10, height = 12, units = "in",
+  res = 150, renderer = gifski_renderer(loop = FALSE)
+)
 
-anim_save(here("visualizations", "animations", 'vaers_covid.gif'))
+anim_save(here("visualizations", "animations", "vaers_covid.gif"))
 
+
+
+# Post-pandemic correlation -----------------------------------------------
+
+post_covid_analysis <- analysis_data %>%
+  filter(year_month >= yearmonth(ymd("2020-03-01")))
+
+cor.test(post_covid_analysis$cases, post_covid_analysis$num_vaccines)
+
+
+# Create QR code to github ------------------------------------------------
+
+generate_svg(qr_code("https://github.com/AGallyer/covid_analysis"),
+  filename = here("visualizations", "plots", "qrcode.svg")
+)
