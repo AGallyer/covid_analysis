@@ -46,4 +46,4 @@ The project is licensed under the GPL 3.0 license - see COPYING.txt for details.
 
 ## Contact
 
-For questions or comments about the analysis, please contact Austin Gallyer at [austin.gallyer\@phd3.idaho.gov](mailto:austin.gallyer@phd3.idaho.gov).
+For questions or comments about the analysis, please contact James Gallyer at [agallyer\@gmail.com](mailto:agallyer@gmail.com).
